@@ -1,0 +1,228 @@
+version: '3.8'
+
+services:
+  scylla-node1:
+    image: scylladb/scylla:latest
+    hostname: scylla-node1
+    networks:
+      - scylla-net
+    ports:
+      - target: 9042
+        published: 9042
+        protocol: tcp
+        mode: host
+      - target: 10000
+        published: 10000
+        protocol: tcp
+        mode: host
+      - target: 9180
+        published: 9180
+        protocol: tcp
+        mode: host
+    volumes:
+      - scylla-data-1:/var/lib/scylla
+      - scylla-config-1:/etc/scylla
+      - ./scylla.yaml:/etc/scylla/scylla.yaml:ro
+      - ./scripts:/scripts:ro
+    environment:
+      - SCYLLA_CLUSTER_NAME=scylla-cluster
+      - SCYLLA_SEEDS=scylla-node1,scylla-node2,scylla-node3
+      - SCYLLA_DATACENTER=dc1
+      - SCYLLA_RACK=rack1
+      - SCYLLA_NODE_ID=1
+    command: >
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --api-address 0.0.0.0
+      --listen-address 0.0.0.0
+      --rpc-address 0.0.0.0
+      --seeds scylla-node1,scylla-node2,scylla-node3
+      --developer-mode 0
+    ulimits:
+      memlock: -1
+      nofile: 200000
+    shm_size: 1gb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.scylla.node == 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status | grep -E '^UN|^DN' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  scylla-node2:
+    image: scylladb/scylla:latest
+    hostname: scylla-node2
+    networks:
+      - scylla-net
+    ports:
+      - target: 9042
+        published: 9043
+        protocol: tcp
+        mode: host
+      - target: 10000
+        published: 10001
+        protocol: tcp
+        mode: host
+      - target: 9180
+        published: 9181
+        protocol: tcp
+        mode: host
+    volumes:
+      - scylla-data-2:/var/lib/scylla
+      - scylla-config-2:/etc/scylla
+      - ./scylla.yaml:/etc/scylla/scylla.yaml:ro
+      - ./scripts:/scripts:ro
+    environment:
+      - SCYLLA_CLUSTER_NAME=scylla-cluster
+      - SCYLLA_SEEDS=scylla-node1,scylla-node2,scylla-node3
+      - SCYLLA_DATACENTER=dc1
+      - SCYLLA_RACK=rack2
+      - SCYLLA_NODE_ID=2
+    command: >
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --api-address 0.0.0.0
+      --listen-address 0.0.0.0
+      --rpc-address 0.0.0.0
+      --seeds scylla-node1,scylla-node2,scylla-node3
+      --developer-mode 0
+    ulimits:
+      memlock: -1
+      nofile: 200000
+    shm_size: 1gb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.scylla.node == 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status | grep -E '^UN|^DN' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  scylla-node3:
+    image: scylladb/scylla:latest
+    hostname: scylla-node3
+    networks:
+      - scylla-net
+    ports:
+      - target: 9042
+        published: 9044
+        protocol: tcp
+        mode: host
+      - target: 10000
+        published: 10002
+        protocol: tcp
+        mode: host
+      - target: 9180
+        published: 9182
+        protocol: tcp
+        mode: host
+    volumes:
+      - scylla-data-3:/var/lib/scylla
+      - scylla-config-3:/etc/scylla
+      - ./scylla.yaml:/etc/scylla/scylla.yaml:ro
+      - ./scripts:/scripts:ro
+    environment:
+      - SCYLLA_CLUSTER_NAME=scylla-cluster
+      - SCYLLA_SEEDS=scylla-node1,scylla-node2,scylla-node3
+      - SCYLLA_DATACENTER=dc1
+      - SCYLLA_RACK=rack3
+      - SCYLLA_NODE_ID=3
+    command: >
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --api-address 0.0.0.0
+      --listen-address 0.0.0.0
+      --rpc-address 0.0.0.0
+      --seeds scylla-node1,scylla-node2,scylla-node3
+      --developer-mode 0
+    ulimits:
+      memlock: -1
+      nofile: 200000
+    shm_size: 1gb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.scylla.node == 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status | grep -E '^UN|^DN' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  scylla-data-1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SCYLLA_DATA_PATH:-./data}/node1
+  scylla-data-2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SCYLLA_DATA_PATH:-./data}/node2
+  scylla-data-3:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SCYLLA_DATA_PATH:-./data}/node3
+  scylla-config-1:
+  scylla-config-2:
+  scylla-config-3:
+
+networks:
+  scylla-net:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

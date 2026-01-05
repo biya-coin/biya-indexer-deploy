@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    hostname: dragonfly
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+      - target: 6380
+        published: 6380
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-data:/data
+      - ./dragonfly-logs:/logs
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  dragonfly-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly
+
+networks:
+  dragonfly-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+

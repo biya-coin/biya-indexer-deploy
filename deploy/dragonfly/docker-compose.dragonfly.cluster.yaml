@@ -1,0 +1,531 @@
+version: '3.8'
+
+services:
+  # Host 1: Master + Replica
+  dragonfly-host1-master:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host1-master
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+      - target: 6380
+        published: 6380
+        protocol: tcp
+        mode: host
+      - target: 16379
+        published: 16379
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host1-master-data:/data
+      - ./dragonfly-logs/host1-master:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=master
+      - DRAGONFLY_HOST_ID=1
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6379
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf
+      --cluster-announce-ip ${DRAGONFLY_HOST1_IP:-dragonfly-host1-master}
+      --cluster-announce-port 6379
+      --cluster-announce-bus-port 16379
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  dragonfly-host1-replica:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host1-replica
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6381
+        published: 6381
+        protocol: tcp
+        mode: host
+      - target: 6382
+        published: 6382
+        protocol: tcp
+        mode: host
+      - target: 16381
+        published: 16381
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host1-replica-data:/data
+      - ./dragonfly-logs/host1-replica:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=replica
+      - DRAGONFLY_HOST_ID=1
+      - DRAGONFLY_MASTER_HOST=${DRAGONFLY_HOST1_MASTER:-dragonfly-host1-master}
+      - DRAGONFLY_MASTER_PORT=6379
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6381
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --replicaof ${DRAGONFLY_HOST1_MASTER:-dragonfly-host1-master} 6379
+    depends_on:
+      - dragonfly-host1-master
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6381", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # Host 2: Master + Replica
+  dragonfly-host2-master:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host2-master
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+      - target: 6380
+        published: 6380
+        protocol: tcp
+        mode: host
+      - target: 16379
+        published: 16379
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host2-master-data:/data
+      - ./dragonfly-logs/host2-master:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=master
+      - DRAGONFLY_HOST_ID=2
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6379
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf
+      --cluster-announce-ip ${DRAGONFLY_HOST2_IP:-dragonfly-host2-master}
+      --cluster-announce-port 6379
+      --cluster-announce-bus-port 16379
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  dragonfly-host2-replica:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host2-replica
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6381
+        published: 6381
+        protocol: tcp
+        mode: host
+      - target: 6382
+        published: 6382
+        protocol: tcp
+        mode: host
+      - target: 16381
+        published: 16381
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host2-replica-data:/data
+      - ./dragonfly-logs/host2-replica:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=replica
+      - DRAGONFLY_HOST_ID=2
+      - DRAGONFLY_MASTER_HOST=${DRAGONFLY_HOST2_MASTER:-dragonfly-host2-master}
+      - DRAGONFLY_MASTER_PORT=6379
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6381
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --replicaof ${DRAGONFLY_HOST2_MASTER:-dragonfly-host2-master} 6379
+    depends_on:
+      - dragonfly-host2-master
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6381", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # Host 3: Master + Replica
+  dragonfly-host3-master:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host3-master
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+      - target: 6380
+        published: 6380
+        protocol: tcp
+        mode: host
+      - target: 16379
+        published: 16379
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host3-master-data:/data
+      - ./dragonfly-logs/host3-master:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=master
+      - DRAGONFLY_HOST_ID=3
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6379
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --cluster-enabled yes
+      --cluster-config-file /data/nodes.conf
+      --cluster-announce-ip ${DRAGONFLY_HOST3_IP:-dragonfly-host3-master}
+      --cluster-announce-port 6379
+      --cluster-announce-bus-port 16379
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  dragonfly-host3-replica:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:${DRAGONFLY_VERSION:-latest}
+    hostname: dragonfly-host3-replica
+    networks:
+      - dragonfly-net
+    ports:
+      - target: 6381
+        published: 6381
+        protocol: tcp
+        mode: host
+      - target: 6382
+        published: 6382
+        protocol: tcp
+        mode: host
+      - target: 16381
+        published: 16381
+        protocol: tcp
+        mode: host
+    volumes:
+      - dragonfly-host3-replica-data:/data
+      - ./dragonfly-logs/host3-replica:/logs
+      - ./dragonfly-cluster.conf:/etc/dragonfly/cluster.conf:ro
+    environment:
+      - DRAGONFLY_LOGTOSTDERR=false
+      - DRAGONFLY_ALSOLOGTOSTDERR=false
+      - DRAGONFLY_MINLOGLEVEL=1
+      - DRAGONFLY_ROLE=replica
+      - DRAGONFLY_HOST_ID=3
+      - DRAGONFLY_MASTER_HOST=${DRAGONFLY_HOST3_MASTER:-dragonfly-host3-master}
+      - DRAGONFLY_MASTER_PORT=6379
+    command: >
+      --logtostderr=false
+      --alsologtostderr=false
+      --minloglevel=1
+      --port 6381
+      --proactor_threads 4
+      --maxmemory 2gb
+      --cache_mode=true
+      --dbnum 16
+      --dir /data
+      --dbfilename dump.rdb
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --replicaof ${DRAGONFLY_HOST3_MASTER:-dragonfly-host3-master} 6379
+    depends_on:
+      - dragonfly-host3-master
+    ulimits:
+      memlock: -1
+      nofile: 65535
+    shm_size: 512mb
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.dragonfly.host == 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      endpoint_mode: dnsrr
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6381", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  dragonfly-host1-master-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host1-master
+  dragonfly-host1-replica-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host1-replica
+  dragonfly-host2-master-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host2-master
+  dragonfly-host2-replica-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host2-replica
+  dragonfly-host3-master-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host3-master
+  dragonfly-host3-replica-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DRAGONFLY_DATA_PATH:-./data}/dragonfly-host3-replica
+
+networks:
+  dragonfly-net:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

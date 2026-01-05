@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  scylla:
+    image: scylladb/scylla:latest
+    hostname: scylla
+    networks:
+      - scylla-net
+    ports:
+      - "9042:9042"  # CQL native protocol
+      - "10000:10000"  # REST API
+      - "9180:9180"  # Prometheus metrics
+    volumes:
+      - scylla-data:/var/lib/scylla
+      - scylla-config:/etc/scylla
+      - ./scylla.yaml:/etc/scylla/scylla.yaml:ro
+      - ./scripts:/scripts:ro
+    environment:
+      - SCYLLA_CLUSTER_NAME=scylla-single
+      - SCYLLA_SEEDS=scylla
+      - SCYLLA_DATACENTER=dc1
+      - SCYLLA_RACK=rack1
+    command: >
+      --smp 2
+      --memory 2G
+      --overprovisioned 1
+      --api-address 0.0.0.0
+      --listen-address 0.0.0.0
+      --rpc-address 0.0.0.0
+      --seeds scylla
+      --developer-mode 1
+    ulimits:
+      memlock: -1
+      nofile: 200000
+    shm_size: 1gb
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status | grep -E '^UN|^DN' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  scylla-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SCYLLA_DATA_PATH:-./data}/single
+  scylla-config:
+
+networks:
+  scylla-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+

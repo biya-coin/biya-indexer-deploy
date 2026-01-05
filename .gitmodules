@@ -1,0 +1,8 @@
+[submodule "injective-chain-releases"]
+	path = injective-chain-releases
+	url = https://github.com/InjectiveLabs/injective-chain-releases.git
+
+[submodule "biya-indexer-rs"]
+	path = biya-indexer-rs
+	url = https://github.com/biya-coin/biya-indexer-rs.git
+	branch = dev
