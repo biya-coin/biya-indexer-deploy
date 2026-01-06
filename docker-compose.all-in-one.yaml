@@ -48,10 +48,8 @@ services:
       --cache_mode=true
       --dbnum 16
       --dir /data
-      --dbfilename dump.rdb
-      --save 900 1
-      --save 300 10
-      --save 60 10000
+      --dbfilename dump
+      --nodf_snapshot_format
     ulimits:
       memlock: -1
       nofile: 65535
@@ -144,7 +142,7 @@ services:
       KAFKA_LOG_SEGMENT_BYTES: 1073741824
       KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
       KAFKA_LOG_CLEANUP_POLICY: delete
-      KAFKA_DELETE_TOPIC_ENABLE: true
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
       
       # 性能调优
       KAFKA_COMPRESSION_TYPE: producer
@@ -221,6 +219,7 @@ services:
       --api-address 0.0.0.0
       --listen-address 0.0.0.0
       --rpc-address 0.0.0.0
+      --broadcast-rpc-address scylla
       --seeds scylla
       --developer-mode 1
     ulimits:
@@ -239,6 +238,116 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # ===========================================================================
+  # Indexer Client - 从链上获取数据并写入 Kafka
+  # ===========================================================================
+  indexer-client:
+    image: indexer-client:${INDEXER_VERSION:-latest}
+    container_name: indexer-client
+    hostname: indexer-client
+    networks:
+      - biya-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - GRPC_STREAM_ENDPOINT=${INDEXER_CHAIN_GRPC_STREAM:-http://host.docker.internal:9999}
+      - GRPC_QUERY_ENDPOINT=${INDEXER_CHAIN_GRPC_QUERY:-http://host.docker.internal:9900}
+      - KAFKA_BROKERS=kafka:29092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-biya-events}
+      - KAFKA_CLIENT_ID=${KAFKA_CLIENT_ID:-biya-indexer-client}
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - HOST_RPC_ADDR=${HOST_LAN_IP:-host.docker.internal}
+    volumes:
+      - ./logs/indexer-client:/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # ===========================================================================
+  # Indexer Consumer - 从 Kafka 消费数据并写入 ScyllaDB 和 Dragonfly
+  # ===========================================================================
+  indexer-consumer:
+    image: indexer-consumer:${INDEXER_VERSION:-latest}
+    container_name: indexer-consumer
+    hostname: indexer-consumer
+    networks:
+      - biya-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+      scylla:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=${LOG_LEVEL:-info}
+      - KAFKA_BROKERS=kafka:29092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-biya-events}
+      - KAFKA_CONSUMER_GROUP=${KAFKA_CONSUMER_GROUP:-biya-consumers}
+      - KAFKA_REDIS_CONSUMER_GROUP=${KAFKA_REDIS_CONSUMER_GROUP:-biya-consumers-redis}
+      - KAFKA_SCYLLADB_CONSUMER_GROUP=${KAFKA_SCYLLADB_CONSUMER_GROUP:-biya-consumers-scylladb}
+      - REDIS_URL=redis://dragonfly:6379
+      - SCYLLADB_NODES=scylla:9042
+      - GRPC_STREAM_ENDPOINT=${INDEXER_CHAIN_GRPC_STREAM:-http://host.docker.internal:9999}
+      - GRPC_QUERY_ENDPOINT=${INDEXER_CHAIN_GRPC_QUERY:-http://host.docker.internal:9900}
+    volumes:
+      - ./logs/indexer-consumer:/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # ===========================================================================
+  # Indexer gRPC Server - 对外提供 gRPC 查询服务
+  # ===========================================================================
+  indexer-grpc-server:
+    image: indexer-server:${INDEXER_VERSION:-latest}
+    container_name: indexer-grpc-server
+    hostname: indexer-grpc-server
+    networks:
+      - biya-net
+    depends_on:
+      dragonfly:
+        condition: service_healthy
+      scylla:
+        condition: service_healthy
+    ports:
+      - "${INDEXER_GRPC_PORT:-50052}:50052"
+      - "${INDEXER_GRPC_WEB_PORT:-50053}:50053"
+    environment:
+      - GRPC_LISTEN_ADDR=0.0.0.0:50052
+      - GRPC_WEB_LISTEN_ADDR=0.0.0.0:50053
+      - GRPC_WEB_ALLOWED_ORIGINS=${GRPC_WEB_ALLOWED_ORIGINS:-*}
+      - REDIS_URL=redis://dragonfly:6379
+      - SCYLLA_NODES=scylla:9042
+      - CHAIN_GRPC_ENDPOINT=${INDEXER_CHAIN_GRPC:-http://host.docker.internal:9900}
+      - TENDERMINT_RPC_ENDPOINT=${INDEXER_CHAIN_RPC:-http://host.docker.internal:26657}
+      - CHAIN_ID=${CHAIN_ID:-biya-1}
+      - FEE_PAYER_ADDRESS=${FEE_PAYER_ADDRESS:-}
+      - FEE_PAYER_PRIVATE_KEY=${FEE_PAYER_PRIVATE_KEY:-}
+      - RUST_LOG=${LOG_LEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
 # =============================================================================
 # 数据卷定义

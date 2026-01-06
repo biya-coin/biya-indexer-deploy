@@ -19,7 +19,9 @@ Biya Indexer 是一个区块链索引服务，用于索引和查询链上数据�
 
 | 组件 | 说明 |
 |------|------|
-| **biya-indexer-rs** | 核心索引服务（Rust 实现） |
+| **indexer-client** | 链上数据采集服务，从区块链节点获取数据并写入 Kafka |
+| **indexer-consumer** | 数据消费服务，从 Kafka 消费数据并写入 ScyllaDB 和 Dragonfly |
+| **indexer-grpc-server** | gRPC 查询服务，对外提供数据查询接口 |
 | **ScyllaDB** | 高性能分布式数据库（Cassandra 兼容） |
 | **Kafka** | 消息队列，用于事件流处理 |
 | **Dragonfly** | 高性能缓存（Redis 兼容） |
@@ -31,25 +33,51 @@ Biya Indexer 是一个区块链索引服务，用于索引和查询链上数据�
 │                       Biya Indexer Stack                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
-│  │  Blockchain │───▶│  Indexer    │───▶│  ScyllaDB   │         │
-│  │    Node     │    │  (Rust)     │    │  (Storage)  │         │
-│  └─────────────┘    └──────┬──────┘    └─────────────┘         │
-│                            │                                    │
-│                            ▼                                    │
-│                     ┌─────────────┐                             │
-│                     │    Kafka    │                             │
-│                     │  (Events)   │                             │
-│                     └──────┬──────┘                             │
-│                            │                                    │
-│                            ▼                                    │
-│                     ┌─────────────┐                             │
-│                     │  Dragonfly  │                             │
-│                     │  (Cache)    │                             │
-│                     └─────────────┘                             │
+│  ┌─────────────┐                                               │
+│  │  Blockchain │                                               │
+│  │    Node     │                                               │
+│  └──────┬──────┘                                               │
+│         │                                                       │
+│         ▼                                                       │
+│  ┌─────────────────┐                                           │
+│  │ indexer-client  │───▶┌─────────────┐                       │
+│  │  (数据采集)      │    │    Kafka    │                       │
+│  └─────────────────┘    │  (Events)   │                       │
+│                         └──────┬──────┘                       │
+│                                │                               │
+│                                ▼                               │
+│                         ┌─────────────────┐                    │
+│                         │ indexer-consumer│                    │
+│                         │  (数据消费)      │                    │
+│                         └──────┬──────────┘                    │
+│                                │                                │
+│                    ┌───────────┴───────────┐                   │
+│                    ▼                       ▼                   │
+│            ┌─────────────┐         ┌─────────────┐            │
+│            │  ScyllaDB   │         │  Dragonfly  │            │
+│            │  (Storage)  │         │  (Cache)    │            │
+│            └──────┬──────┘         └──────┬──────┘            │
+│                   │                       │                    │
+│                   └───────────┬───────────┘                    │
+│                               ▼                                │
+│                      ┌─────────────────┐                       │
+│                      │indexer-grpc-server│                     │
+│                      │  (查询服务)       │                      │
+│                      └─────────┬───────┘                       │
+│                                │                                │
+│                                ▼                                │
+│                         ┌─────────────┐                        │
+│                         │   Clients   │                        │
+│                         └─────────────┘                        │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### 数据流向
+
+1. **indexer-client**: 从区块链节点（gRPC）获取区块和交易数据，写入 Kafka
+2. **indexer-consumer**: 从 Kafka 消费数据，处理后写入 ScyllaDB（持久化）和 Dragonfly（缓存）
+3. **indexer-grpc-server**: 从 ScyllaDB 和 Dragonfly 读取数据，对外提供 gRPC 查询服务
 
 ## 系统要求
 
@@ -76,6 +104,8 @@ Biya Indexer 是一个区块链索引服务，用于索引和查询链上数据�
 
 | 端口 | 服务 | 用途 |
 |------|------|------|
+| 50052 | indexer-grpc-server | gRPC 服务端口 |
+| 50053 | indexer-grpc-server | gRPC-Web 服务端口 |
 | 6379 | Dragonfly | Redis 协议 |
 | 9042 | ScyllaDB | CQL 协议 |
 | 9092 | Kafka | Kafka Broker |
@@ -102,14 +132,61 @@ cp .env.example .env
 vim .env
 ```
 
-### 3. 启动中间件服务
+**代理配置（可选）**：如果需要在容器构建时使用代理（例如 Cargo 更新 crates.io 索引），请在 `.env` 文件中添加：
+
 
 ```bash
-# 使用 All-in-One 配置启动所有服务
-docker-compose -f docker-compose.all-in-one.yaml up -d
+proxy_host=192.168.3.107:7897
+HTTP_PROXY=http://$proxy_host
+HTTPS_PROXY=http://$proxy_host
+NO_PROXY=localhost,127.0.0.1,.local
 ```
 
-### 4. 验证部署
+然后在构建镜像时传递这些参数：
+
+```bash
+docker build \
+  --build-arg HTTP_PROXY=$HTTP_PROXY \
+  --build-arg HTTPS_PROXY=$HTTPS_PROXY \
+  --build-arg NO_PROXY=$NO_PROXY \
+  -f biya-indexer-rs/Dockerfile.grpc.server \
+  -t biya-indexer:latest .
+```
+
+### 3. 启动服务
+
+```bash
+# 使用 All-in-One 配置启动所有服务（包括中间件和索引服务）
+docker-compose -f docker-compose.all-in-one.yaml up -d
+
+# 如果只想启动中间件服务（不启动索引服务）
+docker-compose -f docker-compose.all-in-one.yaml up -d dragonfly zookeeper kafka scylla
+```
+
+**服务启动顺序**:
+1. 首先启动中间件服务（Zookeeper → Kafka, Dragonfly, ScyllaDB）
+2. 然后启动索引服务（indexer-client → indexer-consumer, indexer-grpc-server）
+
+**注意**: Docker Compose 会自动处理服务依赖关系，确保服务按正确顺序启动。
+
+### 4. 构建索引服务镜像（如需要）
+
+如果使用本地构建的镜像，需要先构建索引服务镜像：
+
+```bash
+# 构建 indexer-client 镜像
+docker build -f biya-indexer-rs/Dockerfile.grpc.client -t indexer-client:latest biya-indexer-rs/
+
+# 构建 indexer-consumer 镜像
+docker build -f biya-indexer-rs/Dockerfile.consumer -t indexer-consumer:latest biya-indexer-rs/
+
+# 构建 indexer-grpc-server 镜像
+docker build -f biya-indexer-rs/Dockerfile.grpc.server -t indexer-server:latest biya-indexer-rs/
+```
+
+**注意**: 如果镜像已经构建好或从镜像仓库拉取，可以跳过此步骤。
+
+### 5. 验证部署
 
 ```bash
 # 检查所有服务状态
@@ -125,9 +202,73 @@ docker exec scylla nodetool status
 
 # 验证 Kafka
 docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:9092
+
+# 验证 indexer-client 日志
+docker logs indexer-client --tail=50
+
+# 验证 indexer-consumer 日志
+docker logs indexer-consumer --tail=50
+
+# 验证 indexer-grpc-server 日志
+docker logs indexer-grpc-server --tail=50
 ```
 
 ## 组件说明
+
+### Indexer 服务
+
+#### indexer-client
+
+从区块链节点获取数据并写入 Kafka 的服务。
+
+**功能**:
+- 连接区块链节点的 gRPC Stream 和 Query 接口
+- 获取区块和交易数据
+- 将数据序列化后写入 Kafka
+
+**环境变量**:
+- `GRPC_STREAM_ENDPOINT`: 区块链 gRPC Stream 地址
+- `GRPC_QUERY_ENDPOINT`: 区块链 gRPC Query 地址
+- `KAFKA_BROKERS`: Kafka Broker 地址
+- `KAFKA_TOPIC`: Kafka Topic 名称
+- `KAFKA_CLIENT_ID`: Kafka Client ID
+
+#### indexer-consumer
+
+从 Kafka 消费数据并写入存储层的服务。
+
+**功能**:
+- 从 Kafka 消费事件数据
+- 处理数据并写入 ScyllaDB（持久化存储）
+- 写入 Dragonfly（缓存层）
+
+**环境变量**:
+- `KAFKA_BROKERS`: Kafka Broker 地址
+- `KAFKA_TOPIC`: Kafka Topic 名称
+- `KAFKA_CONSUMER_GROUP`: Consumer Group 名称
+- `REDIS_URL`: Dragonfly/Redis 连接地址
+- `SCYLLADB_NODES`: ScyllaDB 节点地址
+
+#### indexer-grpc-server
+
+对外提供 gRPC 查询服务的服务。
+
+**功能**:
+- 提供 gRPC 和 gRPC-Web 接口
+- 从 ScyllaDB 和 Dragonfly 查询数据
+- 支持区块链数据查询
+
+**环境变量**:
+- `GRPC_LISTEN_ADDR`: gRPC 监听地址
+- `GRPC_WEB_LISTEN_ADDR`: gRPC-Web 监听地址
+- `REDIS_URL`: Dragonfly/Redis 连接地址
+- `SCYLLA_NODES`: ScyllaDB 节点地址
+- `CHAIN_GRPC_ENDPOINT`: 区块链 gRPC 端点（用于链上查询）
+- `TENDERMINT_RPC_ENDPOINT`: Tendermint RPC 端点
+
+**服务端点**:
+- gRPC: `localhost:50052`
+- gRPC-Web: `localhost:50053`
 
 ### ScyllaDB
 
@@ -230,14 +371,33 @@ DRAGONFLY_DATA_PATH=./data/dragonfly # Dragonfly 数据路径
 # ===== 日志配置 =====
 LOG_LEVEL=info                     # 日志级别: debug/info/warn/error
 
-# ===== 链接配置 =====
-INDEXER_CHAIN_RPC=http://localhost:26657  # 区块链 RPC 地址
-INDEXER_CHAIN_GRPC=tcp://localhost:9090   # 区块链 gRPC 地址
+# ===== Indexer 服务配置 =====
+INDEXER_VERSION=latest                    # Indexer 服务镜像版本
+KAFKA_TOPIC=biya-events                   # Kafka Topic 名称
+KAFKA_CLIENT_ID=biya-indexer-client       # Kafka Client ID
+KAFKA_CONSUMER_GROUP=biya-consumers       # Kafka Consumer Group
+INDEXER_GRPC_PORT=50052                   # gRPC 服务端口
+INDEXER_GRPC_WEB_PORT=50053               # gRPC-Web 服务端口
+FEE_PAYER_ADDRESS=                        # 费用支付地址（可选）
+FEE_PAYER_PRIVATE_KEY=                    # 费用支付私钥（可选）
+
+# ===== 区块链节点连接 =====
+INDEXER_CHAIN_RPC=http://localhost:26657          # 区块链 RPC 地址（Tendermint）
+INDEXER_CHAIN_GRPC=http://localhost:9900          # 区块链 gRPC Query 地址
+INDEXER_CHAIN_GRPC_STREAM=http://localhost:9999   # 区块链 gRPC Stream 地址
+INDEXER_CHAIN_GRPC_QUERY=http://localhost:9900    # 区块链 gRPC Query 地址
+HOST_LAN_IP=host.docker.internal          # 主机 IP（用于访问宿主机上的区块链节点）
 
 # ===== 数据库连接 =====
 SCYLLA_HOSTS=scylla:9042           # ScyllaDB 连接地址
 KAFKA_BROKERS=kafka:29092          # Kafka Broker 地址
 REDIS_URL=dragonfly:6379           # Redis/Dragonfly 连接地址
+
+# ===== 代理配置（可选）=====
+# 如果需要在容器构建时使用代理（如 Cargo 更新 crates.io 索引）
+# HTTP_PROXY=http://proxy.example.com:8080
+# HTTPS_PROXY=http://proxy.example.com:8080
+# NO_PROXY=localhost,127.0.0.1,.local
 ```
 
 ### 目录结构
@@ -300,6 +460,9 @@ docker-compose -f docker-compose.all-in-one.yaml logs -f
 docker-compose -f docker-compose.all-in-one.yaml logs -f scylla
 docker-compose -f docker-compose.all-in-one.yaml logs -f kafka
 docker-compose -f docker-compose.all-in-one.yaml logs -f dragonfly
+docker-compose -f docker-compose.all-in-one.yaml logs -f indexer-client
+docker-compose -f docker-compose.all-in-one.yaml logs -f indexer-consumer
+docker-compose -f docker-compose.all-in-one.yaml logs -f indexer-grpc-server
 ```
 
 ### 数据备份
@@ -407,6 +570,29 @@ redis-cli -h localhost -p 6379 INFO
 
 # 检查内存使用
 redis-cli -h localhost -p 6379 INFO memory
+```
+
+#### 5. Indexer 服务问题
+
+```bash
+# 检查 indexer-client 状态
+docker logs indexer-client --tail=100
+
+# 检查 indexer-consumer 状态
+docker logs indexer-consumer --tail=100
+
+# 检查 indexer-grpc-server 状态
+docker logs indexer-grpc-server --tail=100
+
+# 测试 gRPC 服务（需要 grpcurl 工具）
+grpcurl -plaintext localhost:50052 list
+
+# 检查 Kafka Topic 中的数据
+docker exec kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic biya-events \
+  --from-beginning \
+  --max-messages 10
 ```
 
 ### 日志分析
