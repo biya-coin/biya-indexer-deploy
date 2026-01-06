@@ -354,36 +354,6 @@ services:
         max-file: "3"
         compress: "true"
 
-  # ===========================================================================
-  # Envoy gRPC-Web Gateway - 提供 gRPC-Web 网关服务
-  # ===========================================================================
-  envoy-grpc-web:
-    image: envoyproxy/envoy:${ENVOY_VERSION:-v1.28-latest}
-    container_name: envoy-grpc-web-gateway
-    hostname: envoy-grpc-web-gateway
-    networks:
-      - biya-net
-    depends_on:
-      indexer-grpc-server:
-        condition: service_started
-    ports:
-      - "${ENVOY_GRPC_WEB_PORT:-8080}:8080"  # gRPC-Web endpoint
-      - "${ENVOY_GRPC_PORT:-9090}:9090"      # Native gRPC endpoint (optional)
-      - "${ENVOY_ADMIN_PORT:-9901}:9901"    # Admin interface
-    volumes:
-      - ./biya-indexer-rs/envoy-grpc-web.yaml:/etc/envoy/envoy.yaml:ro
-      - ./logs/envoy:/logs
-    command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--service-cluster", "grpc-web-gateway"]
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        compress: "true"
-    profiles:
-      - gateway
-
 # =============================================================================
 # 数据卷定义
 # =============================================================================
