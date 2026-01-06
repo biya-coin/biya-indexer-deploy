@@ -10,7 +10,7 @@
 #   make health       - 执行健康检查
 # =============================================================================
 
-.PHONY: help init start stop restart status logs health clean
+.PHONY: help init build-images deploy start stop restart status logs health clean
 
 # 默认配置
 COMPOSE_FILE := docker-compose.all-in-one.yaml
@@ -34,6 +34,10 @@ help:
 	@echo ""
 	@echo "$(GREEN)初始化:$(NC)"
 	@echo "  make init              初始化环境（创建目录和配置文件）"
+	@echo ""
+	@echo "$(GREEN)构建和部署:$(NC)"
+	@echo "  make build-images      构建所有索引服务镜像（从源码编译）"
+	@echo "  make deploy            一键部署（构建镜像 + 启动服务）"
 	@echo ""
 	@echo "$(GREEN)服务管理:$(NC)"
 	@echo "  make start             启动所有服务"
@@ -74,6 +78,16 @@ init:
 	@echo "$(GREEN)[SUCCESS]$(NC) 数据目录已创建"
 	@echo ""
 	@echo "$(YELLOW)请编辑 .env 文件配置环境变量，然后运行 'make start' 启动服务$(NC)"
+
+# 构建所有索引服务镜像
+build-images:
+	@echo "$(BLUE)[INFO]$(NC) 构建索引服务镜像..."
+	@./scripts/build-images.sh
+
+# 一键部署（构建镜像 + 启动服务）
+deploy: build-images
+	@echo "$(BLUE)[INFO]$(NC) 构建完成，启动服务..."
+	@./scripts/start.sh
 
 # 启动所有服务
 start:
